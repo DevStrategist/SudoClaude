@@ -12,7 +12,13 @@ fi
 
 # 2. Figure out who invoked us so we can reuse their Claude login/config.
 RUN_USER="${SUDO_USER:-root}"
-RUN_HOME="$(getent passwd "$RUN_USER" | cut -d: -f6)"
+RUN_HOME=""
+if command -v getent >/dev/null 2>&1; then
+    RUN_HOME="$(getent passwd "$RUN_USER" | cut -d: -f6 || true)"
+fi
+if [ -z "$RUN_HOME" ] && command -v dscl >/dev/null 2>&1; then
+    RUN_HOME="$(dscl . -read "/Users/$RUN_USER" NFSHomeDirectory 2>/dev/null | awk '{print $2}' || true)"
+fi
 [ -n "${RUN_HOME:-}" ] || RUN_HOME="$HOME"
 
 # 3. Locate the claude CLI. root's PATH usually lacks it, so also probe the

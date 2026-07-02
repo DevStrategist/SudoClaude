@@ -27,7 +27,7 @@ SudoClaude wraps the CLI in small launchers that:
 ## Install
 
 ```bash
-git clone https://github.com/<your-username>/SudoClaude.git
+git clone https://github.com/DevStrategist/SudoClaude.git
 cd SudoClaude
 sudo cp claude+ /usr/local/bin/claude+
 sudo cp codex+ /usr/local/bin/codex+

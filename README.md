@@ -13,7 +13,7 @@ SudoClaude wraps the CLI in small launchers that:
 - **Self-elevates** — run `claude+` or `codex+` as a normal user and it re-execs itself under `sudo` for you (run `sudo claude+` or `sudo codex+` and it just proceeds).
 - **Finds your real CLI binary** even though root's `PATH` usually doesn't include it.
 - **Sets `IS_SANDBOX=1` for Claude Code**, the environment flag Claude Code checks to permit `--dangerously-skip-permissions` under root.
-- **Reuses your existing login** by pointing `HOME` at the invoking user's home directory, so you don't have to re-authenticate as root.
+- **Reuses your existing login** by copying the invoking user's CLI state into a private temporary root home, so you don't have to re-authenticate and root never writes to your live home directory.
 
 > ⚠️ **Read this before using.** This deliberately runs agentic CLIs as root. Claude Code also runs with `--dangerously-skip-permissions`, which removes an additional safety guard. These sessions can execute commands with **full administrative access and fewer/no confirmation prompts**. Only use this on a machine you own, ideally a disposable VM or container, and only if you understand the risk. See [Security notes](#security-notes).
 
@@ -73,14 +73,7 @@ sudo rm -f /usr/local/bin/codex+
 ## Security notes
 
 - **This is intentionally dangerous.** Agent root guards exist so an agent can't run destructive commands as root without oversight. SudoClaude bypasses that for Claude Code and intentionally runs Codex under `sudo`. Treat every session as if it has full `root` on your box — because it does.
-- **File ownership:** because Claude runs as root, any files it creates (including under `~/.claude`) are owned by `root`. If plain `claude` later complains about permissions, fix it with:
-  ```bash
-  sudo chown -R "$USER:$USER" ~/.claude
-  ```
-  For Codex, the same applies to `~/.codex`:
-  ```bash
-  sudo chown -R "$USER:$USER" ~/.codex
-  ```
+- **File ownership:** files the agent creates in your project are owned by `root`. Launcher state is copied into a private temporary home, so `~/.claude`, `~/.claude.json`, and `~/.codex` stay owned by the invoking user. An interrupted session can leave temporary state only below root's home directory.
 - **Prefer isolation:** run this inside a container or throwaway VM rather than your primary workstation.
 - **If you migrated from `claude-code-root-runner`:** that tool created a `claude-temp` user with *passwordless sudo*. SudoClaude does not use it. Remove the leftover privilege‑escalation path:
   ```bash
@@ -95,8 +88,9 @@ Each launcher is one small `bash` script ([`claude+`](./claude+) and [`codex+`](
 1. If not root, `exec sudo "$0" "$@"` to elevate.
 2. Resolve the invoking user (`SUDO_USER`) and their home directory.
 3. Locate the real CLI binary via `PATH` or common install locations.
-4. For Claude: `exec env HOME="$RUN_HOME" IS_SANDBOX=1 claude --dangerously-skip-permissions "$@"`.
-5. For Codex: `exec env HOME="$RUN_HOME" codex "$@"`.
+4. Create a private temporary home below root's home directory and copy the invoking user's CLI state into it.
+5. Run the CLI with that temporary home as `HOME`, preserving the user's existing login without letting root modify the user's live state.
+6. Remove the temporary home when the CLI exits.
 
 ## Credits
 

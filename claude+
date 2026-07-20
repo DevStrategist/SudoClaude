@@ -38,7 +38,27 @@ if [ -z "$CLAUDE_PATH" ] || [ ! -x "$CLAUDE_PATH" ]; then
     exit 1
 fi
 
-# 4. Run Claude as root, in the current directory, reusing the invoking user's
-#    HOME so their existing login/config is used (no re-auth needed).
-#    IS_SANDBOX=1 lifts Claude Code's root/sudo guard for --dangerously-skip-permissions.
-exec env HOME="$RUN_HOME" IS_SANDBOX=1 "$CLAUDE_PATH" --dangerously-skip-permissions "$@"
+# 4. Copy the invoking user's state into a private root-owned home so their
+#    login is reused without allowing root to modify their live home directory.
+ROOT_HOME=""
+if command -v getent >/dev/null 2>&1; then
+    ROOT_HOME="$(getent passwd root | cut -d: -f6 || true)"
+fi
+if [ -z "$ROOT_HOME" ] && command -v dscl >/dev/null 2>&1; then
+    ROOT_HOME="$(dscl . -read /Users/root NFSHomeDirectory 2>/dev/null | awk '{print $2}' || true)"
+fi
+[ -n "$ROOT_HOME" ] || ROOT_HOME="/root"
+
+ROOT_STATE_HOME="$(mktemp -d "$ROOT_HOME/.sudoclaude.XXXXXX")"
+chmod 700 "$ROOT_STATE_HOME"
+trap 'rm -rf "$ROOT_STATE_HOME"' EXIT
+
+if [ -e "$RUN_HOME/.claude" ]; then
+    cp -R "$RUN_HOME/.claude" "$ROOT_STATE_HOME/"
+fi
+if [ -e "$RUN_HOME/.claude.json" ]; then
+    cp -R "$RUN_HOME/.claude.json" "$ROOT_STATE_HOME/"
+fi
+
+# IS_SANDBOX=1 lifts Claude Code's root/sudo guard for --dangerously-skip-permissions.
+env HOME="$ROOT_STATE_HOME" IS_SANDBOX=1 "$CLAUDE_PATH" --dangerously-skip-permissions "$@"
